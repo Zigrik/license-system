@@ -27,6 +27,17 @@ go.work.sum
 # env file
 .env
 
+# Секреты
+.env
+decrypt.key
+*.key
+*.key.info
+
+# Скомпилированные файлы
+genkey
+example
+myapp
+
 # Editor/IDE
 # .idea/
 # .vscode/
