@@ -1,4 +1,4 @@
-package validator
+package license
 
 import (
 	"crypto/aes"
@@ -10,59 +10,94 @@ import (
 	"time"
 )
 
-// LicenseData структура данных лицензии
+// LicenseData структура данных из ключа
 type LicenseData struct {
 	Company   string    `json:"company"`
 	Product   string    `json:"product"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// Validate проверяет лицензию
-// decryptKeyPath: путь к файлу с ключом дешифрования (decrypt.key)
-// licenseKeyPath: путь к файлу лицензии (например, license.key)
-// productName: название продукта для проверки
-// Возвращает: (valid bool, companyName string, err error)
-func Validate(decryptKeyPath, licenseKeyPath, productName string) (bool, string, error) {
+// CheckResult результат проверки
+type CheckResult struct {
+	Valid   bool   // true - лицензия валидна, false - не валидна
+	Company string // название компании (если лицензия валидна)
+	Error   string // описание ошибки (если не валидна)
+}
+
+// CheckLicense проверяет лицензию
+// Параметры:
+//   - decryptKeyPath: путь к файлу decrypt.key
+//   - licenseKeyPath: путь к файлу лицензии (license.key)
+//   - expectedProduct: ожидаемое название продукта
+//
+// Возвращает:
+//   - CheckResult: результат проверки
+func CheckLicense(decryptKeyPath, licenseKeyPath, expectedProduct string) CheckResult {
 	// 1. Читаем ключ дешифрования
 	keyData, err := os.ReadFile(decryptKeyPath)
 	if err != nil {
-		return false, "", fmt.Errorf("не найден файл ключа дешифрования: %w", err)
+		return CheckResult{
+			Valid: false,
+			Error: fmt.Sprintf("Файл ключа дешифрования не найден: %s", decryptKeyPath),
+		}
 	}
 
 	// Декодируем ключ из base64
 	masterKey, err := base64.StdEncoding.DecodeString(string(keyData))
 	if err != nil {
-		return false, "", fmt.Errorf("ошибка декодирования ключа: %w", err)
+		return CheckResult{
+			Valid: false,
+			Error: "Ошибка декодирования ключа дешифрования",
+		}
 	}
 
 	if len(masterKey) != 32 {
-		return false, "", fmt.Errorf("неверный размер ключа: %d (должен быть 32)", len(masterKey))
+		return CheckResult{
+			Valid: false,
+			Error: "Неверный размер ключа дешифрования (должен быть 32 байта)",
+		}
 	}
 
 	// 2. Читаем файл лицензии
 	licenseData, err := os.ReadFile(licenseKeyPath)
 	if err != nil {
-		return false, "", fmt.Errorf("не найден файл лицензии: %w", err)
+		return CheckResult{
+			Valid: false,
+			Error: fmt.Sprintf("Файл лицензии не найден: %s", licenseKeyPath),
+		}
 	}
 
 	// 3. Расшифровываем лицензию
 	license, err := decrypt(string(licenseData), masterKey)
 	if err != nil {
-		return false, "", fmt.Errorf("ошибка расшифровки лицензии: %w", err)
+		return CheckResult{
+			Valid: false,
+			Error: "Ошибка расшифровки лицензии. Возможно, файл поврежден",
+		}
 	}
 
 	// 4. Проверяем название продукта
-	if license.Product != productName {
-		return false, "", fmt.Errorf("лицензия предназначена для другого продукта: %s (ожидался %s)", license.Product, productName)
+	if license.Product != expectedProduct {
+		return CheckResult{
+			Valid: false,
+			Error: fmt.Sprintf("Неверный продукт. Ожидается: %s, В лицензии: %s", expectedProduct, license.Product),
+		}
 	}
 
 	// 5. Проверяем срок действия
 	if time.Now().After(license.ExpiresAt) {
-		return false, "", fmt.Errorf("срок действия лицензии истек %s", license.ExpiresAt.Format("02.01.2006"))
+		return CheckResult{
+			Valid: false,
+			Error: fmt.Sprintf("Срок действия лицензии истек %s", license.ExpiresAt.Format("02.01.2006")),
+		}
 	}
 
-	// Все проверки пройдены
-	return true, license.Company, nil
+	// Всё хорошо
+	return CheckResult{
+		Valid:   true,
+		Company: license.Company,
+		Error:   "",
+	}
 }
 
 // decrypt расшифровывает лицензию

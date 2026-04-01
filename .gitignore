@@ -34,7 +34,6 @@ decrypt.key
 *.key.info
 
 # Скомпилированные файлы
-genkey
 example
 myapp
 
