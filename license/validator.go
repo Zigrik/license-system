@@ -24,26 +24,38 @@ type CheckResult struct {
 	Error   string // описание ошибки (если не валидна)
 }
 
-// CheckLicense проверяет лицензию
+// CheckLicenseFromFile проверяет лицензию из файла
 // Параметры:
-//   - decryptKeyPath: путь к файлу decrypt.key
-//   - licenseKeyPath: путь к файлу лицензии (license.key)
+//   - decryptKey: ключ дешифрования (строка в base64)
+//   - licenseKeyPath: путь к файлу лицензии
 //   - expectedProduct: ожидаемое название продукта
 //
 // Возвращает:
 //   - CheckResult: результат проверки
-func CheckLicense(decryptKeyPath, licenseKeyPath, expectedProduct string) CheckResult {
-	// 1. Читаем ключ дешифрования
-	keyData, err := os.ReadFile(decryptKeyPath)
+func CheckLicense(decryptKeyB64, licenseKeyPath, expectedProduct string) CheckResult {
+	// 1. Читаем файл лицензии
+	licenseData, err := os.ReadFile(licenseKeyPath)
 	if err != nil {
 		return CheckResult{
 			Valid: false,
-			Error: fmt.Sprintf("Файл ключа дешифрования не найден: %s", decryptKeyPath),
+			Error: fmt.Sprintf("Файл лицензии не найден: %s", licenseKeyPath),
 		}
 	}
 
-	// Декодируем ключ из base64
-	masterKey, err := base64.StdEncoding.DecodeString(string(keyData))
+	return CheckLicenseFromBytes(decryptKeyB64, string(licenseData), expectedProduct)
+}
+
+// CheckLicenseFromBytes проверяет лицензию из строки (для встроенного ключа)
+// Параметры:
+//   - decryptKeyB64: ключ дешифрования (строка в base64)
+//   - licenseKey: содержимое файла лицензии (строка)
+//   - expectedProduct: ожидаемое название продукта
+//
+// Возвращает:
+//   - CheckResult: результат проверки
+func CheckLicenseFromBytes(decryptKeyB64, licenseKey, expectedProduct string) CheckResult {
+	// 1. Декодируем ключ дешифрования
+	masterKey, err := base64.StdEncoding.DecodeString(decryptKeyB64)
 	if err != nil {
 		return CheckResult{
 			Valid: false,
@@ -58,17 +70,8 @@ func CheckLicense(decryptKeyPath, licenseKeyPath, expectedProduct string) CheckR
 		}
 	}
 
-	// 2. Читаем файл лицензии
-	licenseData, err := os.ReadFile(licenseKeyPath)
-	if err != nil {
-		return CheckResult{
-			Valid: false,
-			Error: fmt.Sprintf("Файл лицензии не найден: %s", licenseKeyPath),
-		}
-	}
-
-	// 3. Расшифровываем лицензию
-	license, err := decrypt(string(licenseData), masterKey)
+	// 2. Расшифровываем лицензию
+	license, err := decrypt(licenseKey, masterKey)
 	if err != nil {
 		return CheckResult{
 			Valid: false,
@@ -76,7 +79,7 @@ func CheckLicense(decryptKeyPath, licenseKeyPath, expectedProduct string) CheckR
 		}
 	}
 
-	// 4. Проверяем название продукта
+	// 3. Проверяем название продукта
 	if license.Product != expectedProduct {
 		return CheckResult{
 			Valid: false,
@@ -84,7 +87,7 @@ func CheckLicense(decryptKeyPath, licenseKeyPath, expectedProduct string) CheckR
 		}
 	}
 
-	// 5. Проверяем срок действия
+	// 4. Проверяем срок действия
 	if time.Now().After(license.ExpiresAt) {
 		return CheckResult{
 			Valid: false,
